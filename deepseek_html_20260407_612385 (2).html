@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Subway Surfers (JS) — Чанки исправлены</title>
+<style>
+body{margin:0;overflow:hidden;background:black;font-family:Arial, sans-serif}
+#ui{position:fixed;top:10px;left:10px;color:white;font-size:18px;text-shadow:2px 2px 2px black;z-index:10}
+#pauseBtn{position:fixed;top:10px;right:10px;background:#333;color:white;border:2px solid cyan;padding:8px 15px;border-radius:5px;cursor:pointer;font-size:16px;z-index:30}
+#pauseBtn:hover{background:#555}
+#pauseMenu, #confirmDialog{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;justify-content:center;align-items:center;z-index:40}
+.pause-box, .confirm-box{background:#1a1a2e;color:white;padding:30px;border-radius:15px;text-align:center;box-shadow:0 0 20px cyan;border:2px solid cyan;min-width:300px}
+.pause-box h2, .confirm-box h2{color:cyan;margin-top:0}
+.pause-box button, .confirm-box button{background:cyan;color:black;font-size:18px;padding:8px 20px;border:none;border-radius:8px;cursor:pointer;margin:10px;font-weight:bold;min-width:120px}
+.pause-box button:hover, .confirm-box button:hover{background:yellow}
+#gameOver, #startScreen{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;justify-content:center;align-items:center;z-index:20}
+.menu-box{background:#1a1a2e;color:white;padding:30px;border-radius:15px;text-align:center;box-shadow:0 0 20px cyan;border:2px solid cyan;min-width:350px}
+.menu-box h1{color:cyan;margin-top:0}
+.menu-box button{background:cyan;color:black;font-size:20px;padding:10px 30px;border:none;border-radius:10px;cursor:pointer;margin:10px;font-weight:bold;min-width:200px}
+.menu-box button:hover{background:yellow}
+.menu-box input[type=range]{width:80%;margin:10px 0}
+.menu-box label{color:white;font-size:18px}
+.stats{font-size:18px;margin:15px 0}
+#gameOver, #pauseMenu, #confirmDialog, #settingsPanel{display:none}
+.pause-indicator{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:white;font-size:48px;background:rgba(0,0,0,0.7);padding:20px;border-radius:10px;z-index:25;display:none}
+#fps-counter{position:fixed;top:10px;left:100px;color:lime;font-size:14px;z-index:35}
+</style>
+<!-- Stats.js для FPS -->
+<script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+</head>
+<body>
+<div id="fps-counter"></div>
+<div id="ui">
+    Time: <span id="time">0</span>s<br>
+    Meters: <span id="meters">0</span><br>
+    <span style="display:flex; align-items:center;"><span style="font-size:24px; margin-right:5px;">🪙</span> <span id="coins">0</span></span><br>
+    <span id="magnetTimer" style="color:yellow;"></span><br>
+    <span id="bootsTimer" style="color:orange;"></span><br>
+    <span id="jetpackTimer" style="color:cyan;"></span>
+    <span id="safeTimer" style="color:lime;"></span>
+</div>
+<button id="pauseBtn">⏸️ Пауза</button>
+<div class="pause-indicator" id="pauseIndicator">⏸ ПАУЗА</div>
+
+<!-- Меню паузы -->
+<div id="pauseMenu">
+    <div class="pause-box">
+        <h2>⏸ ПАУЗА</h2>
+        <button id="resumeBtn">Продолжить</button><br>
+        <button id="menuBtn">Выйти в меню</button><br>
+        <button id="exitBtn">Выйти из игры</button>
+    </div>
+</div>
+
+<!-- Диалог подтверждения -->
+<div id="confirmDialog">
+    <div class="confirm-box">
+        <h2 id="confirmTitle">Подтверждение</h2>
+        <p id="confirmMessage">Вы уверены?</p>
+        <button id="confirmYes">Да</button>
+        <button id="confirmNo">Нет</button>
+    </div>
+</div>
+
+<!-- Главное меню (стартовый экран) -->
+<div id="startScreen">
+    <div class="menu-box" id="mainMenu">
+        <h1>🏃 SUBWAY SURFERS</h1>
+        <button id="playBtn">Играть</button><br>
+        <button id="settingsBtn">Настройки</button>
+    </div>
+    <div class="menu-box" id="settingsPanel" style="display:none;">
+        <h2>⚙️ Настройки</h2>
+        <label>🔊 Громкость: <span id="volumeValue">50</span>%</label><br>
+        <input type="range" id="volumeSlider" min="0" max="100" value="50"><br><br>
+        <label>📊 Показывать FPS:</label>
+        <input type="checkbox" id="fpsCheckbox"><br><br>
+        <button id="backBtn">Назад</button>
+    </div>
+</div>
+
+<!-- Экран Game Over -->
+<div id="gameOver">
+    <div class="menu-box">
+        <h1>💀 GAME OVER</h1>
+        <div class="stats" id="finalStats"></div>
+        <button id="restartBtn">ИГРАТЬ СНОВА</button>
+        <button id="menuFromGameOverBtn">ВЫЙТИ В МЕНЮ</button>
+        <p style="margin-top:10px;color:#aaa;">Нажми ПРОБЕЛ для быстрого рестарта</p>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+
+<script>
+// --- Глобальные переменные ---
+let scene, camera, renderer, player, lanes, lane, playerState;
+let obstacles, trains, coins, segments, magnets, boots, jetpacks, lowObstacles;
+let standingTrains, movingTrains, ramps, arches, tunnels;
+let speed, speedMultiplier, meters, coinCount, startTime, gameOver;
+let dirLight, ambientLight, fillLight;
+let animationId;
+let isPlaying = false;
+let isPaused = false;
+
+// --- Освещение для туннеля ---
+let defaultAmbientIntensity = 0.404060;
+let defaultDirIntensity = 1;
+let isInTunnel = false;
+
+// --- Переменные для бонусов ---
+let magnetActive = false;
+let magnetEndTime = 0;
+const magnetRadius = 5.0;
+
+let bootsActive = false;
+let bootsEndTime = 0;
+
+let jetpackActive = false;
+let jetpackEndTime = 0;
+
+let jetpackCoinTimer = 0;
+
+let bonusJustEnded = false;
+
+// --- Безопасный период ---
+let safeUntil = 0;
+const SAFE_DURATION = 8000;
+
+// --- Настройки ---
+let volume = 0.5;
+let showFps = false;
+let stats;
+
+// --- Для расчёта времени между кадрами ---
+let lastFrameTime = 0;
+
+// --- Функция инициализации игры ---
+function initGame() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111122);
+
+    camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, 8);
+    camera.lookAt(0, 2, 0);
+
+    renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    ambientLight = new THREE.AmbientLight(0x404060);
+    scene.add(ambientLight);
+
+    dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(5, 10, 7);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    let d = 15;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 20;
+    scene.add(dirLight);
+
+    fillLight = new THREE.PointLight(0x446688, 0.5);
+    fillLight.position.set(-5, 5, 10);
+    scene.add(fillLight);
+
+    lanes = [-2, 0, 2];
+    lane = 1;
+
+    player = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 1.2, 0.8),
+        new THREE.MeshStandardMaterial({color: 0x00ffff, emissive: 0x004444})
+    );
+    player.position.set(0, 0.6, 2);
+    player.castShadow = true;
+    player.receiveShadow = true;
+    scene.add(player);
+
+    playerState = {
+        isJumping: false,
+        isSliding: false,
+        jumpVelocity: 0,
+        slideTimer: 0,
+        onTrain: false,
+        onTunnel: false
+    };
+
+    obstacles = [];
+    trains = [];
+    standingTrains = [];
+    coins = [];
+    segments = [];
+    magnets = [];
+    boots = [];
+    jetpacks = [];
+    lowObstacles = [];
+    ramps = [];
+    arches = [];
+    tunnels = [];
+
+    speed = 0.15;
+    speedMultiplier = 1.0;
+    meters = 0;
+    coinCount = 0;
+    startTime = Date.now();
+    gameOver = false;
+    isPaused = false;
+    document.getElementById('pauseIndicator').style.display = 'none';
+    document.getElementById('pauseBtn').innerText = '⏸️ Пауза';
+    document.getElementById('pauseMenu').style.display = 'none';
+    document.getElementById('confirmDialog').style.display = 'none';
+
+    magnetActive = false;
+    magnetEndTime = 0;
+    bootsActive = false;
+    bootsEndTime = 0;
+    jetpackActive = false;
+    jetpackEndTime = 0;
+    jetpackCoinTimer = 0;
+    bonusJustEnded = false;
+
+    safeUntil = Date.now() + SAFE_DURATION;
+
+    lastFrameTime = Date.now();
+
+    document.getElementById('magnetTimer').innerText = '';
+    document.getElementById('bootsTimer').innerText = '';
+    document.getElementById('jetpackTimer').innerText = '';
+    document.getElementById('safeTimer').innerText = '🛡️ Безопасный период: 8с';
+
+    for (let i = 0; i < 8; i++) {
+        generateSegment(-i * 40);
+    }
+
+    document.getElementById('time').innerText = '0';
+    document.getElementById('meters').innerText = '0';
+    document.getElementById('coins').innerText = '0';
+}
+
+// --- Вспомогательная функция проверки занятости позиции ---
+function isPositionFree(x, z, ignoreObjects = []) {
+    let allObjects = [
+        ...obstacles, ...trains, ...standingTrains, ...lowObstacles, ...ramps, ...arches, ...tunnels
+    ];
+    for (let obj of allObjects) {
+        if (ignoreObjects.includes(obj)) continue;
+        if (obj.isMesh || obj.isGroup) {
+            let box = new THREE.Box3().setFromObject(obj);
+            let point = new THREE.Vector3(x, 0, z);
+            if (box.containsPoint(point)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// --- Функции создания объектов ---
+function createGround(z) {
+    let geo = new THREE.PlaneGeometry(20, 40);
+    let mat = new THREE.MeshStandardMaterial({color: 0x333344, emissive: 0x111122});
+    let ground = new THREE.Mesh(geo, mat);
+    ground.rotation.x = -Math.PI/2;
+    ground.position.set(0, -0.01, z);
+    ground.receiveShadow = true;
+    scene.add(ground);
+    segments.push(ground);
+
+    let railMat = new THREE.MeshStandardMaterial({color: 0xcccccc, emissive: 0x222222});
+    for (let l of lanes) {
+        let railLeft = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 40), railMat);
+        railLeft.position.set(l - 0.8, 0.05, z);
+        railLeft.castShadow = true;
+        railLeft.receiveShadow = true;
+        scene.add(railLeft);
+        segments.push(railLeft);
+
+        let railRight = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 40), railMat);
+        railRight.position.set(l + 0.8, 0.05, z);
+        railRight.castShadow = true;
+        railRight.receiveShadow = true;
+        scene.add(railRight);
+        segments.push(railRight);
+    }
+
+    let sleeperMat = new THREE.MeshStandardMaterial({color: 0x886644, emissive: 0x221100});
+    for (let zOffset = -20; zOffset <= 20; zOffset += 2) {
+        let sleeper = new THREE.Mesh(new THREE.BoxGeometry(6, 0.1, 0.5), sleeperMat);
+        sleeper.position.set(0, 0.05, z + zOffset);
+        sleeper.castShadow = true;
+        sleeper.receiveShadow = true;
+        scene.add(sleeper);
+        segments.push(sleeper);
+    }
+
+    return ground;
+}
+
+function createStation(z) {
+    let geo = new THREE.BoxGeometry(3, 0.5, 40);
+    let mat = new THREE.MeshStandardMaterial({color: 0x666677});
+    for (let side of [-5, 5]) {
+        let platform = new THREE.Mesh(geo, mat);
+        platform.position.set(side, 0.25, z);
+        platform.receiveShadow = true;
+        platform.castShadow = true;
+        scene.add(platform);
+        segments.push(platform);
+    }
+    let pillarGeo = new THREE.BoxGeometry(0.5, 3, 0.5);
+    let pillarMat = new THREE.MeshStandardMaterial({color: 0xaaaaaa});
+    for (let side of [-5, 5]) {
+        for (let zOffset = -15; zOffset <= 15; zOffset += 10) {
+            let pillar = new THREE.Mesh(pillarGeo, pillarMat);
+            pillar.position.set(side * 1.2, 1.5, z + zOffset);
+            pillar.castShadow = true;
+            pillar.receiveShadow = true;
+            scene.add(pillar);
+            segments.push(pillar);
+        }
+    }
+}
+
+function createBuildings(z) {
+    for (let side of [-12, 12]) {
+        for (let i = 0; i < 5; i++) {
+            let h = 3 + Math.random() * 8;
+            let w = 3 + Math.random() * 2;
+            let d = 3 + Math.random() * 2;
+            let building = new THREE.Mesh(
+                new THREE.BoxGeometry(w, h, d),
+                new THREE.MeshStandardMaterial({color: Math.random() * 0x808080 + 0x404040})
+            );
+            building.position.set(side, h/2, z + (Math.random() - 0.5) * 30);
+            building.castShadow = true;
+            building.receiveShadow = true;
+            scene.add(building);
+            segments.push(building);
+        }
+    }
+}
+
+// --- Туннель с центральными опорами ---
+function spawnTunnel(z) {
+    if (Date.now() < safeUntil) return;
+    let group = new THREE.Group();
+    let tunnelMat = new THREE.MeshStandardMaterial({color: 0x222222, emissive: 0x000000, roughness: 0.8, metalness: 0.2});
+    let length = 30;
+    let width = 7;
+    let height = 8;
+    let roofThick = 0.5;
+    
+    let leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, height, length), tunnelMat);
+    leftWall.position.set(-width/2, height/2, 0);
+    leftWall.castShadow = true;
+    leftWall.receiveShadow = true;
+    group.add(leftWall);
+    
+    let rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, height, length), tunnelMat);
+    rightWall.position.set(width/2, height/2, 0);
+    rightWall.castShadow = true;
+    rightWall.receiveShadow = true;
+    group.add(rightWall);
+    
+    let ceiling = new THREE.Mesh(new THREE.BoxGeometry(width, roofThick, length), tunnelMat);
+    ceiling.position.set(0, height, 0);
+    ceiling.castShadow = true;
+    ceiling.receiveShadow = true;
+    group.add(ceiling);
+    
+    let pillarMat = new THREE.MeshStandardMaterial({color: 0x666666, emissive: 0x222222});
+    for (let zOffset = -length/2 + 2; zOffset <= length/2 - 2; zOffset += 6) {
+        let leftCenterPillar = new THREE.Mesh(new THREE.BoxGeometry(0.6, height, 0.6), pillarMat);
+        leftCenterPillar.position.set(-1, height/2, zOffset);
+        leftCenterPillar.castShadow = true;
+        leftCenterPillar.receiveShadow = true;
+        group.add(leftCenterPillar);
+        
+        let rightCenterPillar = new THREE.Mesh(new THREE.BoxGeometry(0.6, height, 0.6), pillarMat);
+        rightCenterPillar.position.set(1, height/2, zOffset);
+        rightCenterPillar.castShadow = true;
+        rightCenterPillar.receiveShadow = true;
+        group.add(rightCenterPillar);
+    }
+    
+    let lampMat = new THREE.MeshStandardMaterial({color: 0xffaa66, emissive: 0xff4422, emissiveIntensity: 0.5});
+    for (let zOffset = -length/2 + 2; zOffset <= length/2 - 2; zOffset += 4) {
+        let lampLeft = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), lampMat);
+        lampLeft.position.set(-width/2 + 0.3, 2.5, zOffset);
+        lampLeft.castShadow = true;
+        group.add(lampLeft);
+        
+        let lampRight = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), lampMat);
+        lampRight.position.set(width/2 - 0.3, 2.5, zOffset);
+        lampRight.castShadow = true;
+        group.add(lampRight);
+    }
+    
+    let tunnelLight = new THREE.PointLight(0xffaa66, 0.5, 15);
+    tunnelLight.position.set(0, 3, 0);
+    tunnelLight.castShadow = false;
+    group.add(tunnelLight);
+    
+    let archMat = new THREE.MeshStandardMaterial({color: 0x888888, emissive: 0x111111});
+    let archRadius = 3.5;
+    let archSegments = 16;
+    let archCurve = new THREE.CylinderGeometry(archRadius, archRadius, 0.3, archSegments, 1, true, Math.PI/2, Math.PI);
+    let arch = new THREE.Mesh(archCurve, archMat);
+    arch.position.set(0, 3.5, -length/2 + 0.5);
+    arch.rotation.z = Math.PI/2;
+    arch.castShadow = true;
+    group.add(arch);
+    
+    let archOut = new THREE.Mesh(archCurve, archMat);
+    archOut.position.set(0, 3.5, length/2 - 0.5);
+    archOut.rotation.z = Math.PI/2;
+    archOut.castShadow = true;
+    group.add(archOut);
+    
+    group.position.set(0, 0, z);
+    scene.add(group);
+    tunnels.push(group);
+    return group;
+}
+
+function spawnBarrier(z, x) {
+    if (Date.now() < safeUntil) return;
+    let mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 2),
+        new THREE.MeshStandardMaterial({color: 0xff3333, emissive: 0x330000})
+    );
+    if (!isPositionFree(x, z)) return;
+    mesh.position.set(x, 0.5, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    obstacles.push(mesh);
+}
+
+function spawnLowBarrier(z, x) {
+    if (Date.now() < safeUntil) return;
+    let group = new THREE.Group();
+    let mat = new THREE.MeshStandardMaterial({color: 0xff8800, emissive: 0x331100});
+    let pillar1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.2, 0.3), mat);
+    pillar1.position.set(x - 0.8, 1.1, 0);
+    pillar1.castShadow = true;
+    pillar1.receiveShadow = true;
+    let pillar2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.2, 0.3), mat);
+    pillar2.position.set(x + 0.8, 1.1, 0);
+    pillar2.castShadow = true;
+    pillar2.receiveShadow = true;
+    let beam = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.2, 0.3), mat);
+    beam.position.set(x, 1.8, 0);
+    beam.castShadow = true;
+    beam.receiveShadow = true;
+    group.add(pillar1);
+    group.add(pillar2);
+    group.add(beam);
+    
+    group.position.set(x, 0, z);
+    scene.add(group);
+    lowObstacles.push(group);
+}
+
+function spawnArch(z, x) {
+    if (Date.now() < safeUntil) return;
+    let group = new THREE.Group();
+    let mat = new THREE.MeshStandardMaterial({color: 0x44ff44, emissive: 0x224422});
+    let pillar1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.5, 0.4), mat);
+    pillar1.position.set(x - 1.0, 1.25, 0);
+    pillar1.castShadow = true;
+    pillar1.receiveShadow = true;
+    let pillar2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.5, 0.4), mat);
+    pillar2.position.set(x + 1.0, 1.25, 0);
+    pillar2.castShadow = true;
+    pillar2.receiveShadow = true;
+    let topBeam = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.3, 0.4), mat);
+    topBeam.position.set(x, 2.4, 0);
+    topBeam.castShadow = true;
+    topBeam.receiveShadow = true;
+    let lowBeam = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.2, 0.4), mat);
+    lowBeam.position.set(x, 1.2, 0);
+    lowBeam.castShadow = true;
+    lowBeam.receiveShadow = true;
+    group.add(pillar1);
+    group.add(pillar2);
+    group.add(topBeam);
+    group.add(lowBeam);
+    
+    group.position.set(x, 0, z);
+    scene.add(group);
+    arches.push(group);
+}
+
+function spawnCoin(z, x = null, y = 1.2) {
+    let mesh = new THREE.Mesh(
+        new THREE.TorusGeometry(0.3, 0.1, 16, 32),
+        new THREE.MeshStandardMaterial({color: 0xffdd44, emissive: 0x442200})
+    );
+    mesh.rotation.x = Math.PI/2;
+    let finalX = (x !== null) ? x : lanes[Math.floor(Math.random() * 3)];
+    if (!isPositionFree(finalX, z)) return;
+    mesh.position.set(finalX, y, z);
+    mesh.castShadow = true;
+    scene.add(mesh);
+    coins.push(mesh);
+}
+
+function spawnMagnet(z) {
+    let mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 16, 16),
+        new THREE.MeshStandardMaterial({color: 0xff44ff, emissive: 0x440044})
+    );
+    let l = Math.floor(Math.random() * 3);
+    let x = lanes[l];
+    if (!isPositionFree(x, z)) return;
+    mesh.position.set(x, 1.0, z);
+    mesh.castShadow = true;
+    scene.add(mesh);
+    magnets.push(mesh);
+}
+
+function spawnBoots(z) {
+    let bootsGroup = new THREE.Group();
+    let mat = new THREE.MeshStandardMaterial({color: 0xffaa00, emissive: 0x442200});
+    let boot1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.6), mat);
+    boot1.position.set(-0.3, 0.2, 0);
+    boot1.castShadow = true;
+    boot1.receiveShadow = true;
+    let boot2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.6), mat);
+    boot2.position.set(0.3, 0.2, 0);
+    boot2.castShadow = true;
+    boot2.receiveShadow = true;
+    bootsGroup.add(boot1);
+    bootsGroup.add(boot2);
+    
+    let l = Math.floor(Math.random() * 3);
+    let x = lanes[l];
+    if (!isPositionFree(x, z)) return;
+    bootsGroup.position.set(x, 0.8, z);
+    scene.add(bootsGroup);
+    boots.push(bootsGroup);
+}
+
+function spawnJetpack(z) {
+    let jetpackGroup = new THREE.Group();
+    let mat = new THREE.MeshStandardMaterial({color: 0x00aaff, emissive: 0x004466});
+    let nozzle1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.6, 8), mat);
+    nozzle1.position.set(-0.4, 0, 0.2);
+    nozzle1.rotation.x = 0.2;
+    nozzle1.castShadow = true;
+    nozzle1.receiveShadow = true;
+    let nozzle2 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.6, 8), mat);
+    nozzle2.position.set(0.4, 0, 0.2);
+    nozzle2.rotation.x = 0.2;
+    nozzle2.castShadow = true;
+    nozzle2.receiveShadow = true;
+    jetpackGroup.add(nozzle1);
+    jetpackGroup.add(nozzle2);
+    
+    let l = Math.floor(Math.random() * 3);
+    let x = lanes[l];
+    if (!isPositionFree(x, z)) return;
+    jetpackGroup.position.set(x, 0.9, z);
+    scene.add(jetpackGroup);
+    jetpacks.push(jetpackGroup);
+}
+
+function spawnTrain(z, type = 'standing') {
+    if (Date.now() < safeUntil) return;
+    let length = 8;
+    let mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 3, length),
+        new THREE.MeshStandardMaterial({color: 0x666666, emissive: 0x111111})
+    );
+    let l = Math.floor(Math.random() * 3);
+    let x = lanes[l];
+    if (!isPositionFree(x, z)) return;
+    mesh.position.set(x, 2.5, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    if (type === 'moving') {
+        trains.push(mesh);
+    } else {
+        standingTrains.push(mesh);
+    }
+}
+
+function spawnTrainAt(x, z, type = 'standing') {
+    if (Date.now() < safeUntil) return;
+    let length = 8;
+    let mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 3, length),
+        new THREE.MeshStandardMaterial({color: 0x666666, emissive: 0x111111})
+    );
+    if (!isPositionFree(x, z)) return;
+    mesh.position.set(x, 2.5, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    if (type === 'moving') {
+        trains.push(mesh);
+    } else {
+        standingTrains.push(mesh);
+    }
+}
+
+// --- Лестница, повёрнутая лицом к игроку ---
+function spawnRamp(z, trainX) {
+    let group = new THREE.Group();
+    
+    let stepMat = new THREE.MeshStandardMaterial({color: 0xccaa66, emissive: 0x442200});
+    let stepHeight = 0.5;
+    let stepDepth = 0.85;
+    for (let i = 0; i < 8; i++) {
+        let step = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.2, stepDepth), stepMat);
+        step.position.set(0, 0.1 + i * stepHeight, -7 + i * stepDepth);
+        step.castShadow = true;
+        step.receiveShadow = true;
+        group.add(step);
+        
+        let edgeMat = new THREE.MeshStandardMaterial({color: 0xffaa66, emissive: 0xff4422, emissiveIntensity: 0.3});
+        let edge = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.05, 0.1), edgeMat);
+        edge.position.set(0, 0.2 + i * stepHeight, -7 + i * stepDepth + stepDepth/2);
+        edge.castShadow = true;
+        group.add(edge);
+    }
+    
+    let railMat = new THREE.MeshStandardMaterial({color: 0xaa8866, metalness: 0.7, roughness: 0.4});
+    for (let side of [-1.2, 1.2]) {
+        let railHorizontal = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 6.5), railMat);
+        railHorizontal.position.set(side, 1.2, -4);
+        railHorizontal.castShadow = true;
+        railHorizontal.receiveShadow = true;
+        group.add(railHorizontal);
+        
+        for (let i = 0; i < 4; i++) {
+            let post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.2, 0.15), railMat);
+            post.position.set(side, 0.6, -6 + i * 2.5);
+            post.castShadow = true;
+            group.add(post);
+        }
+        
+        let startZ = -7;
+        let endZ = -1;
+        let startY = 0.4;
+        let endY = 4.2;
+        let numSegments = 20;
+        let stepZ = (endZ - startZ) / numSegments;
+        let stepY = (endY - startY) / numSegments;
+        for (let i = 0; i <= numSegments; i++) {
+            let z = startZ + i * stepZ;
+            let y = startY + i * stepY;
+            let segment = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.3), railMat);
+            segment.position.set(side, y, z);
+            segment.rotation.z = Math.atan2(stepY, stepZ);
+            segment.castShadow = true;
+            group.add(segment);
+        }
+    }
+    
+    let lampMat = new THREE.MeshStandardMaterial({color: 0xffaa66, emissive: 0xff4422, emissiveIntensity: 0.5});
+    for (let side of [-1.4, 1.4]) {
+        for (let i = 0; i < 4; i++) {
+            let lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), lampMat);
+            lamp.position.set(side, 0.8 + i * 1.0, -6 + i * 2.5);
+            lamp.castShadow = true;
+            group.add(lamp);
+        }
+    }
+    
+    group.rotation.y = Math.PI;
+    group.position.set(trainX, 0, z + 8);
+    if (!isPositionFree(trainX, z + 8, [group])) return;
+    scene.add(group);
+    ramps.push(group);
+    return group;
+}
+
+// --- Генерация сегмента (улучшенная, с правильным добавлением в segments) ---
+function generateSegment(z) {
+    createGround(z);
+    if (Math.random() < 0.3) createStation(z);
+    createBuildings(z); // здания уже добавляются в segments внутри
+
+    // Туннель (редко, 15%)
+    if (Math.random() < 0.15) {
+        spawnTunnel(z);
+    }
+
+    // Вагоны и рампы
+    let trainPositions = [];
+    if (Math.random() < 0.6) {
+        let config = Math.random();
+        if (config < 0.4) {
+            let l = Math.floor(Math.random() * 3);
+            spawnTrainAt(lanes[l], z, 'standing');
+            spawnCoin(z + 4, lanes[l], 4.5);
+            trainPositions.push({x: lanes[l], z: z});
+        } else if (config < 0.7) {
+            let l = Math.floor(Math.random() * 3);
+            spawnRamp(z, lanes[l]);
+            spawnTrainAt(lanes[l], z, 'standing');
+            spawnCoin(z + 4, lanes[l], 4.5);
+            spawnTrainAt(lanes[l], z - 10, 'standing');
+            spawnCoin(z - 6, lanes[l], 4.5);
+            spawnCoin(z + 8, lanes[l], 4.5);
+            trainPositions.push({x: lanes[l], z: z}, {x: lanes[l], z: z-10});
+        } else if (config < 0.9) {
+            let l = Math.floor(Math.random() * 3);
+            spawnTrainAt(lanes[l], z, 'standing');
+            spawnTrainAt(lanes[l], z - 10, 'standing');
+            spawnCoin(z + 4, lanes[l], 4.5);
+            spawnCoin(z - 6, lanes[l], 4.5);
+            trainPositions.push({x: lanes[l], z: z}, {x: lanes[l], z: z-10});
+        } else {
+            let lanesAvailable = [0,1,2];
+            shuffleArray(lanesAvailable);
+            let l1 = lanesAvailable[0];
+            let l2 = lanesAvailable[1];
+            spawnTrainAt(lanes[l1], z, 'standing');
+            spawnTrainAt(lanes[l2], z - 5, 'standing');
+            spawnCoin(z + 4, lanes[l1], 4.5);
+            spawnCoin(z - 1, lanes[l2], 4.5);
+            trainPositions.push({x: lanes[l1], z: z}, {x: lanes[l2], z: z-5});
+        }
+    }
+
+    // Препятствия и бонусы на 4 позициях
+    for (let i = 0; i < 4; i++) {
+        let pos = z - i * 10;
+        let occupiedByTrain = trainPositions.some(tp => Math.abs(tp.z - pos) < 5);
+        if (occupiedByTrain) continue;
+
+        if (Math.random() < 0.7) {
+            let type = Math.floor(Math.random() * 3) + 1;
+            let count = Math.floor(Math.random() * 3) + 1;
+            let availableLanes = [0,1,2];
+            shuffleArray(availableLanes);
+            for (let j = 0; j < count; j++) {
+                let laneIndex = availableLanes[j];
+                let x = lanes[laneIndex];
+                if (type === 1) spawnBarrier(pos, x);
+                else if (type === 2) spawnLowBarrier(pos, x);
+                else spawnArch(pos, x);
+            }
+        } else {
+            let r = Math.random();
+            if (r < 0.6) {
+                spawnCoin(pos);
+            } else if (r < 0.72) {
+                spawnMagnet(pos);
+            } else if (r < 0.84) {
+                spawnBoots(pos);
+            } else {
+                spawnJetpack(pos);
+            }
+        }
+    }
+
+    // Дополнительные монеты (плотно)
+    for (let zOffset = -35; zOffset <= 5; zOffset += 2) {
+        let pos = z + zOffset;
+        if (Math.random() < 0.4) {
+            let laneIndex = Math.floor(Math.random() * 3);
+            let x = lanes[laneIndex];
+            if (isPositionFree(x, pos)) {
+                spawnCoin(pos, x, 1.2);
+            }
+        }
+    }
+
+    // Движущиеся поезда
+    if (Math.random() < 0.2) {
+        let pos = z - Math.floor(Math.random() * 3) * 10;
+        spawnTrain(pos, 'moving');
+    }
+}
+
+function shuffleArray(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+}
+
+// --- Управление ---
+function setupControls() {
+    document.addEventListener("keydown", (e) => {
+        if (gameOver) {
+            if (e.code === "Space") {
+                e.preventDefault();
+                resetGame();
+            }
+            return;
+        }
+        if (!isPlaying) return;
+
+        if (e.key === "p" || e.key === "P") {
+            togglePause();
+            e.preventDefault();
+            return;
+        }
+
+        if (e.key === "Escape") {
+            if (isPaused) {
+                hidePauseMenu();
+                e.preventDefault();
+            }
+            return;
+        }
+
+        if (isPaused) return;
+
+        if (e.key.startsWith("Arrow") || ["w","W","a","A","s","S","d","D"].includes(e.key)) {
+            e.preventDefault();
+        }
+
+        if ((e.key === "ArrowLeft" || e.key === "a" || e.key === "A") && lane > 0) lane--;
+        if ((e.key === "ArrowRight" || e.key === "d" || e.key === "D") && lane < 2) lane++;
+        
+        if (jetpackActive) return;
+
+        if ((e.key === "ArrowUp" || e.key === "w" || e.key === "W") && !playerState.isJumping && !playerState.isSliding) {
+            playerState.isJumping = true;
+            playerState.jumpVelocity = bootsActive ? 0.8 : 0.3;
+        }
+        if ((e.key === "ArrowDown" || e.key === "s" || e.key === "S") && !playerState.isSliding && !playerState.isJumping) {
+            playerState.isSliding = true;
+            playerState.slideTimer = 30;
+            player.scale.y = 0.5;
+            player.position.y = 0.3;
+        }
+    });
+}
+
+// --- Функции паузы ---
+function togglePause() {
+    if (gameOver || !isPlaying) return;
+    if (isPaused) {
+        hidePauseMenu();
+    } else {
+        showPauseMenu();
+    }
+}
+
+function showPauseMenu() {
+    isPaused = true;
+    document.getElementById('pauseIndicator').style.display = 'block';
+    document.getElementById('pauseMenu').style.display = 'flex';
+    document.getElementById('pauseBtn').innerText = '▶️ Продолжить';
+}
+
+function hidePauseMenu() {
+    isPaused = false;
+    document.getElementById('pauseIndicator').style.display = 'none';
+    document.getElementById('pauseMenu').style.display = 'none';
+    document.getElementById('confirmDialog').style.display = 'none';
+    document.getElementById('pauseBtn').innerText = '⏸️ Пауза';
+    lastFrameTime = Date.now();
+}
+
+let confirmAction = null;
+
+function showConfirm(message, onConfirm) {
+    document.getElementById('confirmMessage').innerText = message;
+    confirmAction = onConfirm;
+    document.getElementById('confirmDialog').style.display = 'flex';
+    document.getElementById('pauseMenu').style.display = 'none';
+}
+
+function returnToMenu() {
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+    }
+    if (renderer) {
+        document.body.removeChild(renderer.domElement);
+    }
+    document.getElementById('pauseMenu').style.display = 'none';
+    document.getElementById('confirmDialog').style.display = 'none';
+    document.getElementById('gameOver').style.display = 'none';
+    document.getElementById('startScreen').style.display = 'flex';
+    document.getElementById('mainMenu').style.display = 'block';
+    document.getElementById('settingsPanel').style.display = 'none';
+    isPlaying = false;
+    isPaused = false;
+}
+
+function exitGame() {
+    location.reload();
+}
+
+// --- Обновление состояния игрока ---
+function updatePlayerState() {
+    if (jetpackActive) {
+        let targetY = 9.0;
+        if (player.position.y < targetY) {
+            player.position.y += 0.1;
+            if (player.position.y > targetY) player.position.y = targetY;
+        } else if (player.position.y > targetY) {
+            player.position.y -= 0.05;
+            if (player.position.y < targetY) player.position.y = targetY;
+        }
+        playerState.isJumping = false;
+        playerState.isSliding = false;
+        player.scale.y = 1;
+    } else {
+        if (playerState.isJumping) {
+            player.position.y += playerState.jumpVelocity;
+            playerState.jumpVelocity -= 0.01;
+            if (playerState.onTrain) {
+                if (player.position.y <= 4.0) {
+                    player.position.y = 4.0;
+                    playerState.isJumping = false;
+                }
+            } else if (playerState.onTunnel) {
+                if (player.position.y <= 8.0) {
+                    player.position.y = 8.0;
+                    playerState.isJumping = false;
+                }
+            } else {
+                if (player.position.y <= 0.6) {
+                    player.position.y = 0.6;
+                    playerState.isJumping = false;
+                }
+            }
+        }
+        if (playerState.isSliding) {
+            playerState.slideTimer--;
+            if (playerState.slideTimer <= 0) {
+                playerState.isSliding = false;
+                player.scale.y = 1;
+                if (playerState.onTrain) {
+                    player.position.y = 4.0;
+                } else if (playerState.onTunnel) {
+                    player.position.y = 8.0;
+                } else {
+                    player.position.y = 0.6;
+                }
+            }
+        }
+        if (!playerState.isJumping && !playerState.isSliding) {
+            if (playerState.onTrain) {
+                if (player.position.y < 4.0) {
+                    player.position.y += 0.1;
+                    if (player.position.y > 4.0) player.position.y = 4.0;
+                } else if (player.position.y > 4.0) {
+                    player.position.y -= 0.05;
+                    if (player.position.y < 4.0) player.position.y = 4.0;
+                }
+            } else if (playerState.onTunnel) {
+                if (player.position.y < 8.0) {
+                    player.position.y += 0.1;
+                    if (player.position.y > 8.0) player.position.y = 8.0;
+                } else if (player.position.y > 8.0) {
+                    player.position.y -= 0.05;
+                    if (player.position.y < 8.0) player.position.y = 8.0;
+                }
+            } else {
+                if (player.position.y > 0.6) {
+                    player.position.y -= 0.05;
+                    if (player.position.y < 0.6) player.position.y = 0.6;
+                }
+            }
+        }
+    }
+}
+
+// --- Затемнение в туннеле ---
+function updateTunnelLight() {
+    let playerPos = player.position.clone();
+    let inTunnelNow = false;
+    for (let t of tunnels) {
+        let box = new THREE.Box3().setFromObject(t);
+        if (playerPos.x > box.min.x && playerPos.x < box.max.x &&
+            playerPos.z > box.min.z && playerPos.z < box.max.z &&
+            playerPos.y < box.max.y) {
+            inTunnelNow = true;
+            break;
+        }
+    }
+    if (inTunnelNow !== isInTunnel) {
+        isInTunnel = inTunnelNow;
+        if (isInTunnel) {
+            ambientLight.intensity = 0.1;
+            dirLight.intensity = 0.2;
+        } else {
+            ambientLight.intensity = defaultAmbientIntensity;
+            dirLight.intensity = defaultDirIntensity;
+        }
+    }
+}
+
+// --- Проверка, находится ли игрок на крыше туннеля ---
+function checkTunnelTop() {
+    let playerPos = player.position.clone();
+    let playerBottom = player.position.y - 0.6;
+    playerState.onTunnel = false;
+    for (let t of tunnels) {
+        let box = new THREE.Box3().setFromObject(t);
+        let topY = box.max.y;
+        if (playerPos.x > box.min.x && playerPos.x < box.max.x &&
+            playerPos.z > box.min.z && playerPos.z < box.max.z &&
+            Math.abs(playerBottom - topY) < 0.8) {
+            playerState.onTunnel = true;
+            break;
+        }
+    }
+}
+
+// --- Поддержка мира (улучшенная генерация чанков) ---
+function maintainWorld() {
+    const removeZ = 20; // удаляем объекты немного дальше, чтобы не было резкого исчезновения
+    function filterArray(arr) {
+        for (let i = arr.length-1; i >= 0; i--) {
+            if (arr[i].position.z > removeZ) {
+                scene.remove(arr[i]);
+                arr.splice(i, 1);
+            }
+        }
+    }
+    filterArray(obstacles);
+    filterArray(trains);
+    filterArray(standingTrains);
+    filterArray(coins);
+    filterArray(magnets);
+    filterArray(boots);
+    filterArray(jetpacks);
+    filterArray(lowObstacles);
+    filterArray(ramps);
+    filterArray(arches);
+    filterArray(tunnels);
+    filterArray(segments);
+
+    // Генерация новых сегментов
+    if (segments.length > 0) {
+        let farthestZ = Math.min(...segments.map(s => s.position.z));
+        // Увеличил порог до -150, чтобы сегменты создавались раньше
+        if (farthestZ > -150) {
+            generateSegment(farthestZ - 40);
+        }
+    } else {
+        // Запасной вариант: если segments вдруг пуст, генерируем новый сегмент на позиции -40
+        generateSegment(-40);
+    }
+
+    // Дополнительная страховка: если сегментов меньше 3, генерируем ещё один
+    if (segments.length < 4) {
+        let newZ = segments.length > 0 ? Math.min(...segments.map(s => s.position.z)) - 40 : -40;
+        generateSegment(newZ);
+    }
+}
+
+// --- Проверка столкновений ---
+function checkCollisions() {
+    let playerBox = new THREE.Box3().setFromObject(player);
+    let playerPos = player.position.clone();
+    let playerBottom = playerBox.min.y;
+
+    playerState.onTrain = false;
+    let allTrains = [...trains, ...standingTrains];
+    for (let t of allTrains) {
+        let trainBox = new THREE.Box3().setFromObject(t);
+        let trainTop = trainBox.max.y;
+        if (playerPos.x > trainBox.min.x - 0.5 && playerPos.x < trainBox.max.x + 0.5 &&
+            playerPos.z > trainBox.min.z - 0.5 && playerPos.z < trainBox.max.z + 0.5 &&
+            playerBottom >= trainTop - 0.8 && playerBottom <= trainTop + 0.8) {
+            playerState.onTrain = true;
+            break;
+        }
+    }
+
+    checkTunnelTop();
+
+    if (bonusJustEnded && playerState.onTrain) {
+        gameOver = true;
+        showGameOver();
+        return;
+    }
+
+    for (let o of obstacles) {
+        if (new THREE.Box3().setFromObject(o).intersectsBox(playerBox)) {
+            gameOver = true;
+            showGameOver();
+            return;
+        }
+    }
+
+    for (let t of allTrains) {
+        if (new THREE.Box3().setFromObject(t).intersectsBox(playerBox)) {
+            if (!playerState.onTrain) {
+                gameOver = true;
+                showGameOver();
+                return;
+            }
+        }
+    }
+
+    for (let low of lowObstacles) {
+        if (new THREE.Box3().setFromObject(low).intersectsBox(playerBox)) {
+            if (jetpackActive) continue;
+            if (!playerState.isSliding) {
+                gameOver = true;
+                showGameOver();
+                return;
+            }
+        }
+    }
+
+    for (let arch of arches) {
+        if (new THREE.Box3().setFromObject(arch).intersectsBox(playerBox)) {
+            if (jetpackActive) continue;
+            if (!playerState.isJumping && !playerState.isSliding) {
+                gameOver = true;
+                showGameOver();
+                return;
+            }
+        }
+    }
+
+    for (let ramp of ramps) {
+        if (new THREE.Box3().setFromObject(ramp).intersectsBox(playerBox)) {
+            player.position.y = 4.1;
+        }
+    }
+
+    for (let i = coins.length-1; i >= 0; i--) {
+        let coin = coins[i];
+        let coinPos = coin.position.clone();
+        let dist = playerPos.distanceTo(coinPos);
+
+        if (magnetActive && dist < magnetRadius) {
+            scene.remove(coin);
+            coins.splice(i, 1);
+            coinCount++;
+            document.getElementById('coins').innerText = coinCount;
+            continue;
+        }
+
+        if (new THREE.Box3().setFromObject(coin).intersectsBox(playerBox)) {
+            scene.remove(coin);
+            coins.splice(i, 1);
+            coinCount++;
+            document.getElementById('coins').innerText = coinCount;
+        }
+    }
+
+    for (let i = magnets.length-1; i >= 0; i--) {
+        let magnet = magnets[i];
+        if (new THREE.Box3().setFromObject(magnet).intersectsBox(playerBox)) {
+            magnetActive = true;
+            magnetEndTime = Date.now() + 15000;
+            document.getElementById('magnetTimer').innerText = `⚡ Магнит: 15с`;
+            scene.remove(magnet);
+            magnets.splice(i, 1);
+            player.material.emissive.setHex(0x44ff44);
+        }
+    }
+
+    for (let i = boots.length-1; i >= 0; i--) {
+        let boot = boots[i];
+        if (new THREE.Box3().setFromObject(boot).intersectsBox(playerBox)) {
+            bootsActive = true;
+            bootsEndTime = Date.now() + 15000;
+            document.getElementById('bootsTimer').innerText = `👟 Ботинки: 15с`;
+            scene.remove(boot);
+            boots.splice(i, 1);
+            player.material.emissive.setHex(0xff4400);
+        }
+    }
+
+    for (let i = jetpacks.length-1; i >= 0; i--) {
+        let jetpack = jetpacks[i];
+        if (new THREE.Box3().setFromObject(jetpack).intersectsBox(playerBox)) {
+            jetpackActive = true;
+            jetpackEndTime = Date.now() + 15000;
+            document.getElementById('jetpackTimer').innerText = `🚀 Джетпак: 15с`;
+            scene.remove(jetpack);
+            jetpacks.splice(i, 1);
+            player.material.emissive.setHex(0x0066ff);
+        }
+    }
+}
+
+// --- Показать экран Game Over ---
+function showGameOver() {
+    let elapsed = Math.floor((Date.now() - startTime) / 1000);
+    document.getElementById('finalStats').innerHTML = `
+        Время: ${elapsed}с<br>
+        Метры: ${Math.floor(meters)}<br>
+        Монеты: ${coinCount}
+    `;
+    document.getElementById('gameOver').style.display = 'flex';
+    isPlaying = false;
+    isPaused = false;
+    document.getElementById('pauseIndicator').style.display = 'none';
+    document.getElementById('pauseMenu').style.display = 'none';
+    document.getElementById('confirmDialog').style.display = 'none';
+    ambientLight.intensity = defaultAmbientIntensity;
+    dirLight.intensity = defaultDirIntensity;
+    isInTunnel = false;
+}
+
+// --- Скрыть все меню ---
+function hideMenus() {
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('gameOver').style.display = 'none';
+    document.getElementById('pauseMenu').style.display = 'none';
+    document.getElementById('confirmDialog').style.display = 'none';
+}
+
+// --- Функция сброса игры ---
+function resetGame() {
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+    }
+    if (renderer) {
+        document.body.removeChild(renderer.domElement);
+    }
+    initGame();
+    hideMenus();
+    isPlaying = true;
+    animate();
+}
+
+// --- Настройки ---
+function initSettings() {
+    let savedVolume = localStorage.getItem('volume');
+    if (savedVolume !== null) {
+        volume = parseFloat(savedVolume);
+        document.getElementById('volumeSlider').value = volume * 100;
+        document.getElementById('volumeValue').innerText = Math.round(volume * 100);
+    }
+    let savedFps = localStorage.getItem('showFps');
+    if (savedFps !== null) {
+        showFps = savedFps === 'true';
+        document.getElementById('fpsCheckbox').checked = showFps;
+    }
+
+    document.getElementById('volumeSlider').addEventListener('input', (e) => {
+        volume = e.target.value / 100;
+        document.getElementById('volumeValue').innerText = e.target.value;
+        localStorage.setItem('volume', volume);
+    });
+
+    document.getElementById('fpsCheckbox').addEventListener('change', (e) => {
+        showFps = e.target.checked;
+        localStorage.setItem('showFps', showFps);
+        if (showFps) {
+            if (!stats) {
+                stats = new Stats();
+                stats.showPanel(0);
+                stats.dom.style.position = 'absolute';
+                stats.dom.style.top = '10px';
+                stats.dom.style.left = '10px';
+                stats.dom.style.zIndex = '100';
+                document.body.appendChild(stats.dom);
+            }
+        } else {
+            if (stats) {
+                stats.dom.remove();
+                stats = null;
+            }
+        }
+    });
+
+    if (showFps) {
+        stats = new Stats();
+        stats.showPanel(0);
+        stats.dom.style.position = 'absolute';
+        stats.dom.style.top = '10px';
+        stats.dom.style.left = '10px';
+        stats.dom.style.zIndex = '100';
+        document.body.appendChild(stats.dom);
+    }
+}
+
+// --- Основной цикл анимации ---
+function animate() {
+    if (stats) stats.begin();
+
+    if (isPlaying && !gameOver && !isPaused) {
+        let now = Date.now();
+        let deltaMs = now - lastFrameTime;
+        if (lastFrameTime === 0) deltaMs = 0;
+
+        if (jetpackActive) {
+            bootsEndTime += deltaMs;
+        }
+
+        lastFrameTime = now;
+
+        if (Date.now() < safeUntil) {
+            let remaining = Math.ceil((safeUntil - Date.now()) / 1000);
+            document.getElementById('safeTimer').innerText = `🛡️ Безопасный период: ${remaining}с`;
+        } else {
+            document.getElementById('safeTimer').innerText = '';
+        }
+
+        let deltaSpeed = speed * speedMultiplier;
+        obstacles.forEach(o => o.position.z += deltaSpeed);
+        trains.forEach(t => t.position.z += deltaSpeed * 1.4);
+        standingTrains.forEach(t => t.position.z += deltaSpeed);
+        coins.forEach(c => c.position.z += deltaSpeed);
+        magnets.forEach(m => m.position.z += deltaSpeed);
+        boots.forEach(b => b.position.z += deltaSpeed);
+        jetpacks.forEach(j => j.position.z += deltaSpeed);
+        lowObstacles.forEach(l => l.position.z += deltaSpeed);
+        ramps.forEach(r => r.position.z += deltaSpeed);
+        arches.forEach(a => a.position.z += deltaSpeed);
+        tunnels.forEach(t => t.position.z += deltaSpeed);
+        segments.forEach(s => s.position.z += deltaSpeed);
+
+        player.position.x = lanes[lane];
+
+        checkCollisions();
+        updatePlayerState();
+        updateTunnelLight();
+
+        meters += deltaSpeed * 5;
+        let elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('time').innerText = elapsed;
+        document.getElementById('meters').innerText = Math.floor(meters);
+
+        speedMultiplier = 1.0 + elapsed / 100;
+
+        if (jetpackActive) {
+            if (jetpackCoinTimer <= 0) {
+                let zPos = player.position.z + 5;
+                let yPos = 9.5;
+                let laneIndex = Math.floor(Math.random() * 3);
+                let xPos = lanes[laneIndex];
+                if (isPositionFree(xPos, zPos, [])) {
+                    let coin = new THREE.Mesh(
+                        new THREE.TorusGeometry(0.3, 0.1, 16, 32),
+                        new THREE.MeshStandardMaterial({color: 0xffdd44, emissive: 0x442200})
+                    );
+                    coin.rotation.x = Math.PI/2;
+                    coin.position.set(xPos, yPos, zPos);
+                    coin.castShadow = true;
+                    scene.add(coin);
+                    coins.push(coin);
+                }
+                jetpackCoinTimer = 10 + Math.floor(Math.random() * 20);
+            } else {
+                jetpackCoinTimer--;
+            }
+        }
+
+        bonusJustEnded = false;
+        if (magnetActive) {
+            let now = Date.now();
+            let remaining = Math.max(0, Math.ceil((magnetEndTime - now) / 1000));
+            if (remaining <= 0) {
+                magnetActive = false;
+                document.getElementById('magnetTimer').innerText = '';
+                bonusJustEnded = true;
+                if (bootsActive) {
+                    player.material.emissive.setHex(0xff4400);
+                } else if (jetpackActive) {
+                    player.material.emissive.setHex(0x0066ff);
+                } else {
+                    player.material.emissive.setHex(0x004444);
+                }
+            } else {
+                document.getElementById('magnetTimer').innerText = `⚡ Магнит: ${remaining}с`;
+            }
+        }
+
+        if (bootsActive) {
+            let now = Date.now();
+            let remaining = Math.max(0, Math.ceil((bootsEndTime - now) / 1000));
+            if (remaining <= 0) {
+                bootsActive = false;
+                document.getElementById('bootsTimer').innerText = '';
+                bonusJustEnded = true;
+                if (magnetActive) {
+                    player.material.emissive.setHex(0x44ff44);
+                } else if (jetpackActive) {
+                    player.material.emissive.setHex(0x0066ff);
+                } else {
+                    player.material.emissive.setHex(0x004444);
+                }
+            } else {
+                document.getElementById('bootsTimer').innerText = `👟 Ботинки: ${remaining}с`;
+            }
+        }
+
+        if (jetpackActive) {
+            let now = Date.now();
+            let remaining = Math.max(0, Math.ceil((jetpackEndTime - now) / 1000));
+            if (remaining <= 0) {
+                jetpackActive = false;
+                document.getElementById('jetpackTimer').innerText = '';
+                bonusJustEnded = true;
+                if (magnetActive) {
+                    player.material.emissive.setHex(0x44ff44);
+                } else if (bootsActive) {
+                    player.material.emissive.setHex(0xff4400);
+                } else {
+                    player.material.emissive.setHex(0x004444);
+                }
+            } else {
+                document.getElementById('jetpackTimer').innerText = `🚀 Джетпак: ${remaining}с`;
+            }
+        }
+
+        maintainWorld();
+
+        coins.forEach(c => c.rotation.y += 0.03);
+
+        camera.position.x = player.position.x;
+        camera.position.y = player.position.y + 3;
+        camera.position.z = player.position.z + 5;
+        camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
+    }
+
+    renderer.render(scene, camera);
+    if (stats) stats.end();
+    animationId = requestAnimationFrame(animate);
+}
+
+// --- Обработчики меню ---
+document.getElementById('playBtn').addEventListener('click', () => {
+    resetGame();
+});
+
+document.getElementById('settingsBtn').addEventListener('click', () => {
+    document.getElementById('mainMenu').style.display = 'none';
+    document.getElementById('settingsPanel').style.display = 'block';
+});
+
+document.getElementById('backBtn').addEventListener('click', () => {
+    document.getElementById('settingsPanel').style.display = 'none';
+    document.getElementById('mainMenu').style.display = 'block';
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+    resetGame();
+});
+
+document.getElementById('menuFromGameOverBtn').addEventListener('click', () => {
+    returnToMenu();
+});
+
+document.getElementById('pauseBtn').addEventListener('click', togglePause);
+
+document.getElementById('resumeBtn').addEventListener('click', hidePauseMenu);
+document.getElementById('menuBtn').addEventListener('click', () => {
+    showConfirm('Вы точно хотите выйти в меню?', () => {
+        returnToMenu();
+    });
+});
+document.getElementById('exitBtn').addEventListener('click', () => {
+    showConfirm('Вы точно хотите выйти из игры?', () => {
+        exitGame();
+    });
+});
+
+document.getElementById('confirmYes').addEventListener('click', () => {
+    if (confirmAction) {
+        confirmAction();
+    }
+    document.getElementById('confirmDialog').style.display = 'none';
+    if (isPaused && document.getElementById('pauseMenu').style.display !== 'flex') {
+        document.getElementById('pauseMenu').style.display = 'flex';
+    }
+    confirmAction = null;
+});
+
+document.getElementById('confirmNo').addEventListener('click', () => {
+    document.getElementById('confirmDialog').style.display = 'none';
+    if (isPaused) {
+        document.getElementById('pauseMenu').style.display = 'flex';
+    }
+    confirmAction = null;
+});
+
+window.addEventListener('resize', () => {
+    if (camera) {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+    }
+    if (renderer) {
+        renderer.setSize(innerWidth, innerHeight);
+    }
+});
+
+window.onload = () => {
+    initSettings();
+    setupControls();
+    animate();
+};
+
+</script>
+</body>
+</html>
